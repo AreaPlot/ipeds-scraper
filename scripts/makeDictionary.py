@@ -8,7 +8,8 @@ from urllib.request import urlopen
 import json
 import zipfile
 import os
-import xlrd
+import re
+import openpyxl
 import csv
 import argparse
 
@@ -46,20 +47,21 @@ def downloadDicts(start, stop):
                 url = f['dicturl']
                 # dataset file name (XXXX.zip)
                 urlname = url.split("http://nces.ed.gov/ipeds/datacenter/data/",1)[1]
-                rd = urlopen(url)
                 saveurl = "dict/" + str(i) +'/' + urlname
                 # Save the zip files
-                with open(saveurl, "wb") as p:
-                     p.write(rd.read())
-                     p.close()
+                if not os.path.exists(saveurl):
+                    rd = urlopen(url)
+                    with open(saveurl, "wb") as p:
+                        p.write(rd.read())
+                        p.close()
 
-                # Unzip .zips
-                zip_ref = zipfile.ZipFile(saveurl, 'r')
-                zip_ref.extractall("dict/" + str(i) +'/')
-                zip_ref.close()
+                    # Unzip .zips
+                    zip_ref = zipfile.ZipFile(saveurl, 'r')
+                    zip_ref.extractall("dict/" + str(i) +'/')
+                    zip_ref.close()
 
-                # Remove zip file
-                os.remove("dict/" + str(i) +'/' + urlname)
+                    # Remove zip file
+                    # os.remove("dict/" + str(i) +'/' + urlname)
 
 # For the Excel dictionaries, compile the varlist tabs
 def makeMasterDict(start, stop):
@@ -79,14 +81,22 @@ def makeMasterDict(start, stop):
                 print("Adding " + str(i) + " " + file + " to dictionary")
                 dictname = file.split(".", 1)[0]
                 rowstart = [i, dictname, file]
-                workbook = xlrd.open_workbook('dict/' + str(i) +'/' + file, on_demand = True)
-                worksheet = workbook.sheet_by_name('varlist')
-                with open('data/dictionary.csv', 'a') as f:
-                    c = csv.writer(f)
-                    for r in range(2,worksheet.nrows):
-                        varrow = worksheet.row_values(r)
-                        row = rowstart + varrow
-                        c.writerow(row)
+                workbook = openpyxl.load_workbook(filename='dict/' + str(i) +'/' + file)
+                if "varlist" in workbook:
+                    worksheet = workbook['varlist']
+                    with open('data/dictionary.csv', 'a') as f:
+                        c = csv.writer(f)
+                        for r in worksheet.iter_rows(min_row=2):
+                            newvalues = [cell.value for cell in r]
+                            row = rowstart.copy()
+                            if newvalues[0]:
+                                for item in newvalues:
+                                    if isinstance(item, str):
+                                        item = re.sub(r"[\r\n]", "", item)
+                                    row.append(item)
+                                c.writerow(row)
+                else:
+                    print(f"'varlist' not found in workbook: {file}")
 
 downloadDicts(args.start, args.stop)
 makeMasterDict(args.start, args.stop)
